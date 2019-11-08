@@ -67,6 +67,22 @@ class MaskConv(nn.Module):
             x = x.masked_fill(mask, 0)
         return x, lengths
 
+    def introspect(self, x, lengths, ilayers):
+        ac = {}
+        for i, module in enumerate(self.seq_module):
+            x = module(x)
+            if i in ilayers:
+                ac['conv' + str(i)] = x
+            mask = torch.BoolTensor(x.size()).fill_(0)
+            if x.is_cuda:
+                mask = mask.cuda()
+            for i, length in enumerate(lengths):
+                length = length.item()
+                if (mask[i].size(2) - length) > 0:
+                    mask[i].narrow(2, length, mask[i].size(2) - length).fill_(1)
+            x = x.masked_fill(mask, 0)
+        return x, lengths, ac
+
 
 class InferenceBatchSoftmax(nn.Module):
     def forward(self, input_):
@@ -205,6 +221,39 @@ class DeepSpeech(nn.Module):
         # identity in training mode, softmax in eval mode
         x = self.inference_softmax(x)
         return x, output_lengths
+
+    def introspect(self, x, lengths):
+        ac = {}
+        #ac['input'] = x.cpu().numpy()
+        lengths = lengths.cpu().int()
+        output_lengths = self.get_seq_lens(lengths)
+        conv_ilayers = [2, 5]
+        x, _, ac_conv= self.conv.introspect(x, output_lengths, conv_ilayers)
+        for i, name in enumerate(['conv2', 'conv5']):
+            ac_cur_conv = ac_conv[name]
+            sizes = ac_cur_conv.size()
+            ac_cur_conv = ac_cur_conv.view(sizes[0], sizes[1] * sizes[2], sizes[3])
+            ac_cur_conv = ac_cur_conv.transpose(1, 2)
+            new_name = 'conv' + str(i + 1)
+            ac[new_name] = ac_cur_conv.cpu().numpy()
+
+        sizes = x.size()
+        x = x.view(sizes[0], sizes[1] * sizes[2], sizes[3])  # Collapse feature dimension
+        x = x.transpose(1, 2).transpose(0, 1).contiguous()  # TxNxH
+
+        for i, rnn in enumerate(self.rnns):
+            x = rnn(x, output_lengths)
+            ac['rnn' + str(i)] = x.transpose(0, 1).cpu().numpy()
+
+        if not self.bidirectional:  # no need for lookahead layer in bidirectional
+            x = self.lookahead(x)
+
+        x = self.fc(x)
+        ac['fc'] = x.transpose(0, 1).cpu().numpy()
+        x = x.transpose(0, 1)
+        # identity in training mode, softmax in eval mode
+        x = self.inference_softmax(x)
+        return ac, output_lengths
 
     def get_seq_lens(self, input_length):
         """

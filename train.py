@@ -223,6 +223,10 @@ if __name__ == '__main__':
     data_time = AverageMeter()
     losses = AverageMeter()
 
+    #file_path = '%s/deepspeech_%d.pth' % (save_folder, 0)
+    #torch.save(DeepSpeech.serialize(model, optimizer=optimizer, epoch=0, loss_results=loss_results,
+    #                                wer_results=wer_results, cer_results=cer_results),
+    #           file_path)
     for epoch in range(start_epoch, args.epochs):
         model.train()
         end = time.time()
