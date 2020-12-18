@@ -135,7 +135,7 @@ def label_activations(activations, alignments):
         labels = []
         features = []
         for (ac, ali) in zip(v, alignments):
-            feats, lbls = frames(ali, ac, index=lambda ms: ms // 20)
+            feats, lbls = frames(ali, ac, index=lambda ms: (ms // 10 - 1) // 2 + 1)
             if feats:
                 labels.append(lbls)
                 features.append(feats)
